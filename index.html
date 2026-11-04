@@ -1285,7 +1285,7 @@ function updateUI() {
         ? `卖掉普通鱼 ×${commons.length}（¥${commons.reduce((v, t) => v + fishValue(t), 0)}）`
         : '卖掉普通鱼';
     $('pondPill').classList.toggle('hidden', inTank);
-    if (!inTank && pond) $('pondPill').textContent = PONDS[pond.idx].name + (pond.free ? ' · 破网票' : '') + ' · 网 ' + '●'.repeat(pond.netsLeft) + '○'.repeat(pond.nets - pond.netsLeft);
+    if (!inTank && pond) $('pondPill').textContent = PONDS[pond.idx].name + (pond.free ? ' · 破网票' : '') + ' · ' + '❤️'.repeat(pond.netsLeft) + '🤍'.repeat(pond.nets - pond.netsLeft);
     let hint = '';
     if (inTank) hint = tankFish.length ? '点鱼可以卖掉 · 点水面或按住拖动会吓到它们' : '';
     else if (net && net.phase === 'aim') hint = `按住放网 · 松手提网 · 还剩 ${pond.netsLeft} 张网`;
