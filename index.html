@@ -644,10 +644,9 @@ function catchChance(a) {
     return c[0] + (c[1] - c[0]) * t;
 }
 const weightOf = list => list.reduce((s, a) => s + a.S.weight * a.size, 0);
-// 手（鼠标/手指）握在把手末端，网在手的上方，不会被手挡住。
-// 把手方向随手在屏幕上的横向位置转：左边朝右下、中间朝下、右边朝左下，保证两侧都够得到
+// 手（鼠标/手指）握在把手末端，网在手的左上方，不会被手挡住；右手持网，把手固定朝右下
 const handleLen = r => r + 72;
-function handleAngle() { return Math.PI * (0.3 + 0.4 * clamp(pointer.x / W, 0, 1)); }
+function handleAngle() { return Math.PI * 0.3; }
 function netTargetFromPointer() {
     const a = net.ha, g = handleLen(net.r);
     return { x: pointer.x - Math.cos(a) * g, y: pointer.y - Math.sin(a) * g };
@@ -808,7 +807,8 @@ function updatePondFish(dt, f) {
         // 边界
         const m = 40;
         if (a.x < m) fx += (m - a.x) * 0.004;
-        if (a.x > W - m) fx -= (a.x - W + m) * 0.004;
+        // 右手持网，屏幕最右边一条网够不着，鱼不往那里游
+        if (a.x > W - 100) fx -= (a.x - W + 100) * 0.004;
         if (a.y < TOP) fy += (TOP - a.y) * 0.004;
         const bot = H - 130;
         if (a.y > bot) fy -= (a.y - bot) * 0.004;
