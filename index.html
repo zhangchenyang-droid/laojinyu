@@ -1432,10 +1432,11 @@ cvs.addEventListener('pointermove', e => {
     stir.x = e.clientX; stir.y = e.clientY;
     if (!inTankWater(e.clientX, e.clientY)) return;
     scareTank(e.clientX, e.clientY, 130, Math.min(1.5, 0.25 + d * 0.06), dx / d, dy / d);
-    stir.acc += d; stir.sound += d;
+    stir.acc += d; stir.sound += d; stir.slosh = (stir.slosh || 0) + d;
     if (stir.acc > 26) { stir.acc = 0; ripple(e.clientX, e.clientY, 40, 0.45); }
-    swish(Math.min(1, d / 22), Math.min(1, d / 30));
-    if (stir.sound > 60) { stir.sound = 0; bubbles(1, 500, 1300, 0, 0.07); }
+    // 搅水只用水声：一路冒咕噜气泡（拖得越快越密）+ 隔一段一声低沉的拨水，不要持续的沙沙噪声
+    if (stir.sound > 32) { stir.sound = 0; bubbles(2, 300, 900, 0.04, 0.08); }
+    if (stir.slosh > 110) { stir.slosh = 0; wash(0.22, 600, 200, 0.07, 0, 0.04); bubble(rand(220, 320), 0.07, 0.02, 0.1); }
 });
 cvs.addEventListener('pointerleave', () => { if (!(net && net.inWater)) pointer.inside = false; });
 cvs.addEventListener('pointerdown', e => {
