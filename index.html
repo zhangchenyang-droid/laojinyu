@@ -69,6 +69,15 @@
         animation: pop .4s cubic-bezier(.3, 1.6, .5, 1);
     }
     .modal h2 { margin: 0 0 6px; font-size: 24px; }
+    /* 右上角关闭：滚动时一直停在右上角 */
+    .mx {
+        position: sticky; top: 0; float: right; z-index: 3; margin: -8px -8px 0 8px;
+        width: 40px; height: 40px; border-radius: 50%; cursor: pointer;
+        background: rgba(255, 255, 255, .14); border: 1px solid rgba(255, 255, 255, .28);
+        color: #fff; font-size: 18px; font-weight: 700; font-family: inherit; line-height: 1;
+        backdrop-filter: blur(4px);
+    }
+    .mx:active { transform: scale(.92); }
     .modal .sub { opacity: .7; font-size: 14px; margin-bottom: 16px; }
     .modal .actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
 
@@ -1264,7 +1273,7 @@ function roundRect(x, y, w, h, r) {
     ctx.arcTo(x, y, x + w, y, r);
     ctx.closePath();
 }
-function openModal(html) { $('modal').innerHTML = html; $('modalBg').classList.add('show'); }
+function openModal(html) { $('modal').innerHTML = html; $('modal').scrollTop = 0; $('modalBg').classList.add('show'); }
 function closeModal() { $('modalBg').classList.remove('show'); }
 function hidePop() { $('fishPop').classList.add('hidden'); selected = null; }
 
@@ -1285,9 +1294,8 @@ function showPondSelect() {
             ${btn}
         </div>`;
     }).join('');
-    openModal(`<h2>选一个鱼塘</h2><div class="sub">一张票只能下一网。网上的鱼越多越重，纸撑不住就全跑了。</div>
-        <div class="cards">${cards}</div>
-        <div class="actions"><button class="btn ghost" id="mClose">关闭</button></div>`);
+    openModal(`<button class="mx" id="mClose" aria-label="关闭">✕</button><h2>选一个鱼塘</h2><div class="sub">一张票只能下一网。网上的鱼越多越重，纸撑不住就全跑了。</div>
+        <div class="cards">${cards}</div>`);
     $('mClose').onclick = closeModal;
     $('modal').querySelectorAll('[data-pond]').forEach(b => b.onclick = () => {
         const i = +b.dataset.pond, free = !!b.dataset.free;
@@ -1347,11 +1355,10 @@ function showResult(caught, torn) {
 function showDex() {
     sfx.click();
     const total = Object.keys(S.dex).length;
-    openModal(`<h2>鱼群图鉴</h2><div class="sub">已收集 ${total}/${SPECIES.length} · 第一次捞到就会登记，卖掉也不影响</div>
+    openModal(`<button class="mx" id="mClose" aria-label="关闭">✕</button><h2>鱼群图鉴</h2><div class="sub">已收集 ${total}/${SPECIES.length} · 第一次捞到就会登记，卖掉也不影响</div>
         <div id="dexBody"></div>
-        <div class="actions" style="justify-content:space-between">
+        <div class="actions" style="justify-content:flex-start">
             <button class="btn ghost" id="mReset" style="color:#ff9a8a">清空存档，从头开始</button>
-            <button class="btn ghost" id="mClose">关闭</button>
         </div>`);
     $('mClose').onclick = closeModal;
     $('mReset').onclick = () => {
