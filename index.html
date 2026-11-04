@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>捞金鱼</title>
 <style>
     * { box-sizing: border-box; }
@@ -116,6 +116,21 @@
         pointer-events: none; animation: toastIn .3s cubic-bezier(.3, 1.6, .5, 1);
     }
 
+    .topbar { padding-top: max(12px, env(safe-area-inset-top)); }
+    .hint { bottom: max(22px, env(safe-area-inset-bottom)); }
+    /* 手机竖屏：顶栏换两行、按钮缩小 */
+    @media (max-width: 640px) {
+        .topbar { flex-wrap: wrap; gap: 6px; padding: 8px 10px; padding-top: max(8px, env(safe-area-inset-top)); }
+        .spacer { flex-basis: 100%; height: 0; }
+        .pill { padding: 6px 10px; font-size: 13px; }
+        .btn { padding: 8px 12px; font-size: 13px; }
+        .hint { white-space: normal; width: 92vw; font-size: 13px; bottom: max(12px, env(safe-area-inset-bottom)); }
+        .modal { padding: 16px; border-radius: 16px; }
+        .modal h2 { font-size: 20px; }
+        .cards { grid-template-columns: 1fr; }
+        .dex-grid { grid-template-columns: repeat(2, 1fr); }
+        .toast { top: 110px; font-size: 13px; white-space: nowrap; }
+    }
     @keyframes fadeIn { from { opacity: 0; } }
     @keyframes pop { from { transform: scale(.6); opacity: 0; } }
     .pop { animation-name: popUp; }
@@ -197,11 +212,15 @@ const freeTicketOK = () => S.money < PONDS[0].ticket && S.tank.length === 0;
 const cvs = document.getElementById('c');
 const ctx = cvs.getContext('2d');
 let W = 0, H = 0, DPR = 1;
+// 顶栏实际占到的高度（手机上会换两行），鱼缸/鱼塘活动范围避开它
+let TOP = 70;
+function measureTop() { const el = document.querySelector('.topbar'); if (el) TOP = el.getBoundingClientRect().bottom + 24; }
 function resize() {
     DPR = Math.min(window.devicePixelRatio || 1, 2);
     W = innerWidth; H = innerHeight;
     cvs.width = W * DPR; cvs.height = H * DPR;
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    measureTop();
 }
 addEventListener('resize', resize);
 resize();
@@ -231,17 +250,68 @@ function audio() {
     if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { } }
     if (AC && AC.state === 'suspended') AC.resume();
 }
+let NOISE = null;
+function noiseSrc() {
+    if (!NOISE) {
+        NOISE = AC.createBuffer(1, AC.sampleRate * 2, AC.sampleRate);
+        const d = NOISE.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    const src = AC.createBufferSource();
+    src.buffer = NOISE; src.loop = true;
+    return src;
+}
 function noise(dur, type, freq, q, vol, delay = 0) {
     if (!AC) return;
     const t0 = AC.currentTime + delay;
-    const buf = AC.createBuffer(1, AC.sampleRate * dur, AC.sampleRate);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    const src = AC.createBufferSource(); src.buffer = buf;
+    const src = noiseSrc();
     const flt = AC.createBiquadFilter(); flt.type = type; flt.frequency.value = freq; flt.Q.value = q;
     const g = AC.createGain();
     g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
-    src.connect(flt).connect(g).connect(AC.destination); src.start(t0);
+    src.connect(flt).connect(g).connect(AC.destination); src.start(t0, Math.random() * 1.5); src.stop(t0 + dur + 0.05);
+}
+// 水声：噪声过低通，截止频率从 f0 扫到 f1（高→低 = 水花落下变闷，低→高 = 哗地被拉起）
+function wash(dur, f0, f1, vol, delay = 0, attack = 0.012) {
+    if (!AC) return;
+    const t0 = AC.currentTime + delay;
+    const src = noiseSrc();
+    const flt = AC.createBiquadFilter(); flt.type = 'lowpass'; flt.Q.value = 0.9;
+    flt.frequency.setValueAtTime(f0, t0); flt.frequency.exponentialRampToValueAtTime(f1, t0 + dur);
+    const g = AC.createGain();
+    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(vol, t0 + attack);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    src.connect(flt).connect(g).connect(AC.destination); src.start(t0, Math.random() * 1.5); src.stop(t0 + dur + 0.05);
+}
+// 气泡：正弦音高快速上扬，是水里气泡/水滴的特征声音
+function bubble(f, vol, delay = 0, dur = 0.06) {
+    if (!AC) return;
+    const t0 = AC.currentTime + delay;
+    const o = AC.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(f, t0); o.frequency.exponentialRampToValueAtTime(f * rand(1.8, 2.6), t0 + dur);
+    const g = AC.createGain();
+    g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    o.connect(g).connect(AC.destination); o.start(t0); o.stop(t0 + dur + 0.02);
+}
+function bubbles(n, fmin, fmax, span, vol, delay = 0) {
+    for (let i = 0; i < n; i++) bubble(rand(fmin, fmax), vol * rand(0.5, 1), delay + Math.random() * span, rand(0.04, 0.09));
+}
+// 持续划水声：一路常驻的噪声，音量/亮度跟着拖动速度走，不动了自然淡出
+let swishNode = null, swishT = 0;
+function swish(level, bright) {
+    if (!AC) return;
+    if (!swishNode) {
+        const src = noiseSrc();
+        const flt = AC.createBiquadFilter(); flt.type = 'lowpass'; flt.Q.value = 1.2; flt.frequency.value = 500;
+        const g = AC.createGain(); g.gain.value = 0;
+        src.connect(flt).connect(g).connect(AC.destination); src.start();
+        swishNode = { flt, g };
+    }
+    if (level <= 0 && swishNode.off) return;
+    swishNode.off = level <= 0;
+    const t = AC.currentTime;
+    swishNode.g.gain.setTargetAtTime(level * 0.3, t, level > 0 ? 0.04 : 0.12);
+    swishNode.flt.frequency.setTargetAtTime(350 + bright * 1500, t, 0.08);
+    if (level > 0) swishT = performance.now();
 }
 function tone(f1, f2, dur, vol, type = 'sine', delay = 0) {
     if (!AC) return;
@@ -253,11 +323,26 @@ function tone(f1, f2, dur, vol, type = 'sine', delay = 0) {
     o.connect(g).connect(AC.destination); o.start(t0); o.stop(t0 + dur + 0.02);
 }
 const sfx = {
-    splash() { noise(0.4, 'bandpass', 900, 0.8, 0.5); tone(300, 120, 0.15, 0.15); },
-    lift()   { noise(0.3, 'bandpass', 1600, 1, 0.35); tone(400, 900, 0.14, 0.12); },
-    tear()   { noise(0.5, 'highpass', 2500, 0.7, 0.45); noise(0.25, 'bandpass', 500, 2, 0.4, 0.05); tone(300, 80, 0.4, 0.15, 'sawtooth'); },
+    // 网下水：网轻轻没入水里（缓起、偏闷的推水声）+ 低沉的咕噜气泡，不要拍水面那种脆响
+    splash() {
+        wash(0.5, 1000, 260, 0.16, 0, 0.08);
+        wash(0.35, 450, 220, 0.08, 0.03, 0.06);
+        tone(110, 70, 0.25, 0.04);
+        bubbles(6, 240, 600, 0.55, 0.06, 0.1);
+    },
+    // 提网：哗啦地被拉出水 + 水从网上滴落
+    lift() {
+        wash(0.35, 500, 2400, 0.35, 0, 0.05);
+        wash(0.9, 3200, 1400, 0.06, 0.12, 0.05);
+        for (let i = 0, t = 0.18; i < 10; i++, t += rand(0.04, 0.12)) bubble(rand(1400, 2800), rand(0.04, 0.08), t, 0.03);
+    },
+    // 破网：撕纸 + 鱼掉回水里的水花
+    tear() { noise(0.4, 'highpass', 2500, 0.7, 0.4); wash(0.5, 2000, 300, 0.4, 0.06); bubbles(6, 400, 1000, 0.4, 0.1, 0.1); },
+    // 点水面：水滴入水的"咚" + 小水花
+    plop() { bubble(rand(450, 650), 0.25, 0, 0.09); wash(0.25, 1800, 500, 0.16); bubbles(3, 700, 1400, 0.2, 0.07, 0.05); },
+    // 点中一条鱼
+    pick() { bubble(rand(800, 1000), 0.14, 0, 0.05); },
     coin()   { tone(1200, 1200, 0.06, 0.08, 'square'); tone(1800, 1800, 0.12, 0.07, 'square', 0.05); },
-    plop()   { tone(700, 250, 0.12, 0.2); },
     fanfare(){ [523, 659, 784, 1046].forEach((f, i) => tone(f, f, 0.22, 0.14, 'triangle', i * 0.09)); },
     click()  { tone(900, 700, 0.05, 0.1); },
 };
@@ -520,7 +605,7 @@ function startPond(idx, free) {
     });
     const deco = [];
     if (idx === 1) {
-        for (let i = 0; i < 6; i++) deco.push({ x: rand(60, W - 60), y: rand(90, H - 60), r: rand(34, 60), rot: rand(0, TAU), flower: Math.random() < 0.35 });
+        for (let i = 0; i < 6; i++) deco.push({ x: rand(60, W - 60), y: rand(TOP + 20, H - 60), r: rand(34, 60), rot: rand(0, TAU), flower: Math.random() < 0.35 });
     } else if (idx === 2) {
         for (let i = 0; i < 60; i++) deco.push({ x: rand(0, W), y: rand(0, H), s: rand(0.5, 1.8), ph: rand(0, TAU) });
     } else {
@@ -538,8 +623,9 @@ function startPond(idx, free) {
         x: pointer.inside ? pointer.x : W / 2, y: pointer.inside ? pointer.y : H / 2,
         r: free ? NET_R * 0.82 : NET_R, max: free ? 70 : PONDS[idx].net, dur: free ? 70 : PONDS[idx].net,
         drain: 6, phase: 'aim', inWater: false, alarm: 0, speed: 0, t: 0,
-        liveN: 0, liveW: 0, caught: [], cracks, done: false,
+        liveN: 0, liveW: 0, caught: [], cracks, done: false, ha: handleAngle(),
     };
+    if (pointer.inside) { const tp = netTargetFromPointer(); net.x = tp.x; net.y = tp.y; }
     updateUI();
 }
 
@@ -558,13 +644,23 @@ function catchChance(a) {
     return c[0] + (c[1] - c[0]) * t;
 }
 const weightOf = list => list.reduce((s, a) => s + a.S.weight * a.size, 0);
+// 手（鼠标/手指）握在把手末端，网在手的上方，不会被手挡住。
+// 把手方向随手在屏幕上的横向位置转：左边朝右下、中间朝下、右边朝左下，保证两侧都够得到
+const handleLen = r => r + 72;
+function handleAngle() { return Math.PI * (0.3 + 0.4 * clamp(pointer.x / W, 0, 1)); }
+function netTargetFromPointer() {
+    const a = net.ha, g = handleLen(net.r);
+    return { x: pointer.x - Math.cos(a) * g, y: pointer.y - Math.sin(a) * g };
+}
 
 // 网还没静下来（刚下网/明显拖动）时名贵鱼不敢靠近；静够久就会好奇地游过来
 const rareWary = a => net.alarm * a.S.shy > 0.15 || net.speed > 1.5;
 function dipNet() {
     net.phase = 'dip';
     net.inWater = true;
-    net.x = pointer.x; net.y = pointer.y;
+    net.ha = handleAngle();
+    const tp = netTargetFromPointer();
+    net.x = tp.x; net.y = tp.y;
     net.alarm = Math.min(1, net.alarm + 0.85);
     // 拍水惊鱼：网下和附近的鱼"嗖"地窜开。贵鱼反应快窜得远，普通鱼有的会发呆
     for (const a of pond.fish) {
@@ -636,13 +732,16 @@ function updateNet(dt, f) {
         const k = 1 - Math.pow(1 - (net.inWater ? 0.14 : 0.4), f);
         const ox = net.x, oy = net.y;
         if (pointer.inside || net.inWater) {
-            net.x += (pointer.x - net.x) * k;
-            net.y += (pointer.y - net.y) * k;
+            net.ha += (handleAngle() - net.ha) * (1 - Math.pow(0.9, f));
+            const tp = netTargetFromPointer();
+            net.x += (tp.x - net.x) * k;
+            net.y += (tp.y - net.y) * k;
         }
         net.speed = f > 0 ? Math.hypot(net.x - ox, net.y - oy) / f : 0;
         if (net.inWater) {
             net.alarm = Math.min(1, net.alarm + Math.max(0, net.speed - 0.3) * 0.035 * f);
             net.dur -= (net.drain + net.speed * 1.1) * dt;
+            if (net.speed > 0.8) swish(Math.min(0.45, net.speed / 14), Math.min(0.6, net.speed / 20));
             if (net.speed > 2.5 && Math.random() < 0.3 * f) ripple(net.x + rand(-1, 1) * net.r, net.y + rand(-1, 1) * net.r, 30, 0.35);
             const inNet = fishInNet();
             net.liveN = inNet.length;
@@ -710,8 +809,9 @@ function updatePondFish(dt, f) {
         const m = 40;
         if (a.x < m) fx += (m - a.x) * 0.004;
         if (a.x > W - m) fx -= (a.x - W + m) * 0.004;
-        if (a.y < 70) fy += (70 - a.y) * 0.004;
-        if (a.y > H - m) fy -= (a.y - H + m) * 0.004;
+        if (a.y < TOP) fy += (TOP - a.y) * 0.004;
+        const bot = H - 130;
+        if (a.y > bot) fy -= (a.y - bot) * 0.004;
         // 怕网：惊吓半径 = 网的"动静" × 胆小程度
         let flee = 0;
         if (net && (net.phase === 'aim' || net.phase === 'dip')) {
@@ -839,7 +939,7 @@ function drawNetUnder() {
     ctx.restore();
 }
 function drawHandle(r, lift) {
-    const a = Math.PI * 0.25;
+    const a = net.ha;
     ctx.lineCap = 'round';
     ctx.lineWidth = 11; ctx.strokeStyle = '#d9433a';
     ctx.beginPath(); ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r); ctx.lineTo(Math.cos(a) * (r + 85 + lift), Math.sin(a) * (r + 85 + lift)); ctx.stroke();
@@ -928,8 +1028,9 @@ function drawNetAbove() {
 let tankFish = [];
 let selected = null;
 function tankRect() {
-    const w = Math.min(W * 0.88, 1000), h = Math.min(H * 0.7, 600);
-    return { x: (W - w) / 2, y: 70 + (H - 70 - h) / 2, w, h };
+    const avail = H - TOP - 50;
+    const w = Math.min(W * (W < 640 ? 0.92 : 0.88), 1000), h = Math.min(avail, W < 640 ? 900 : 600);
+    return { x: (W - w) / 2, y: TOP + (avail - h) / 2, w, h };
 }
 function enterTank() {
     mode = 'tank';
@@ -1115,6 +1216,7 @@ function toast(msg, ms = 2200) {
     setTimeout(() => el.remove(), ms + 400);
 }
 function updateUI() {
+    requestAnimationFrame(measureTop);
     const inTank = mode === 'tank';
     $('tankPill').textContent = `鱼缸 ${S.tank.length} 条`;
     $('btnGo').classList.toggle('hidden', !inTank);
@@ -1315,7 +1417,8 @@ cvs.addEventListener('pointermove', e => {
     scareTank(e.clientX, e.clientY, 130, Math.min(1.5, 0.25 + d * 0.06), dx / d, dy / d);
     stir.acc += d; stir.sound += d;
     if (stir.acc > 26) { stir.acc = 0; ripple(e.clientX, e.clientY, 40, 0.45); }
-    if (stir.sound > 140) { stir.sound = 0; noise(0.25, 'bandpass', rand(600, 1100), 1, 0.12); }
+    swish(Math.min(1, d / 22), Math.min(1, d / 30));
+    if (stir.sound > 60) { stir.sound = 0; bubbles(1, 500, 1300, 0, 0.07); }
 });
 cvs.addEventListener('pointerleave', () => { if (!(net && net.inWater)) pointer.inside = false; });
 cvs.addEventListener('pointerdown', e => {
@@ -1329,7 +1432,7 @@ cvs.addEventListener('pointerdown', e => {
             const d = Math.hypot(a.x - e.clientX, a.y - e.clientY);
             if (d < fishLen(a) * 0.9 && d < bd) { bd = d; best = a; }
         }
-        if (best) { sfx.plop(); showPop(best); return; }
+        if (best) { sfx.pick(); showPop(best); return; }
         hidePop();
         if (inTankWater(e.clientX, e.clientY)) {
             ripple(e.clientX, e.clientY, 70, 0.6);
@@ -1362,6 +1465,7 @@ function frame(now) {
     if (hitstop > 0) { hitstop -= dt; dt = 0; }
     T += dt;
     const f = dt * 60;
+    if (swishNode && performance.now() - swishT > 70) swish(0, 0);
 
     if (mode === 'pond' && pond) { updateNet(dt, f); updatePondFish(dt, f); }
     else updateTankFish(dt, f);
