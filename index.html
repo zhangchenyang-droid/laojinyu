@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>捞金鱼</title>
+<!-- 添加到主屏幕后全屏启动（iPhone 只能靠这个全屏） -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="捞金鱼">
+<meta name="theme-color" content="#06121f">
+<link rel="apple-touch-icon" href="icon-180.png">
 <style>
     * { box-sizing: border-box; }
     html, body {
@@ -131,6 +139,14 @@
         .dex-grid { grid-template-columns: repeat(2, 1fr); }
         .toast { top: 110px; font-size: 13px; white-space: nowrap; }
     }
+    .a2hs {
+        position: fixed; left: 50%; transform: translateX(-50%); z-index: 15;
+        bottom: max(54px, calc(env(safe-area-inset-bottom) + 40px)); width: min(92vw, 420px);
+        background: rgba(10, 25, 45, .92); border: 1px solid rgba(255, 220, 120, .45); border-radius: 14px;
+        padding: 10px 36px 10px 14px; font-size: 13px; line-height: 1.6; box-shadow: 0 8px 24px rgba(0, 0, 0, .4);
+    }
+    .a2hs b { color: #ffd970; }
+    .a2hs .x { position: absolute; right: 6px; top: 4px; padding: 4px 8px; font-size: 16px; opacity: .7; cursor: pointer; }
     @keyframes fadeIn { from { opacity: 0; } }
     @keyframes pop { from { transform: scale(.6); opacity: 0; } }
     .pop { animation-name: popUp; }
@@ -155,6 +171,7 @@
 <div class="hint" id="hint"></div>
 <div class="modal-bg" id="modalBg"><div class="modal" id="modal"></div></div>
 <div class="pop hidden" id="fishPop"></div>
+<div class="a2hs hidden" id="a2hs"><span class="x" id="a2hsX">✕</span>想全屏玩？点 Safari 底部的 <b>分享</b> → <b>添加到主屏幕</b>，从桌面图标打开就是全屏。</div>
 
 <script>
 // ============================================================
@@ -1451,6 +1468,22 @@ function toggleDebug() {
 }
 $('btnDebug').onclick = toggleDebug;
 addEventListener('keydown', e => { if (e.code === 'KeyD' && !e.repeat) toggleDebug(); });
+// 手机自动全屏：安卓 / iPad 第一次碰屏幕就进全屏；iPhone Safari 不支持网页全屏，提示添加到主屏幕
+const isTouch = matchMedia('(pointer: coarse)').matches;
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isStandalone = matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || navigator.standalone === true;
+const canFullscreen = !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
+function tryFullscreen() {
+    if (!isTouch || isStandalone || document.fullscreenElement || document.webkitFullscreenElement) return;
+    const el = document.documentElement, req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (!req) return;
+    try { const r = req.call(el, { navigationUI: 'hide' }); if (r && r.catch) r.catch(() => { }); } catch (e) { }
+}
+document.addEventListener('pointerdown', tryFullscreen, true);
+if (isIOS && isTouch && !isStandalone && !canFullscreen && !localStorage.getItem('fishScoop_a2hs')) {
+    $('a2hs').classList.remove('hidden');
+    $('a2hsX').onclick = () => { $('a2hs').classList.add('hidden'); localStorage.setItem('fishScoop_a2hs', '1'); };
+}
 function onUp() { stir.on = false; if (mode === 'pond' && net && net.phase === 'dip') liftNet(); }
 cvs.addEventListener('pointerup', onUp);
 cvs.addEventListener('pointercancel', onUp);
