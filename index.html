@@ -129,10 +129,7 @@
     /* 手机竖屏：顶栏换两行、按钮缩小 */
     @media (max-width: 640px) {
         .topbar { flex-wrap: wrap; gap: 6px; padding: 8px 10px; padding-top: max(8px, env(safe-area-inset-top)); }
-        .spacer { flex-basis: 100%; height: 0; order: 2; }
-        .topbar > * { order: 3; }
-        .topbar > .pill { order: 0; }
-        #btnGo { order: 1; margin-left: auto; }
+        .spacer { flex-basis: 100%; height: 0; }
         .pill { padding: 6px 10px; font-size: 13px; }
         .btn { padding: 8px 12px; font-size: 13px; }
         .hint { white-space: normal; width: 92vw; font-size: 13px; bottom: max(12px, env(safe-area-inset-bottom)); }
@@ -167,7 +164,6 @@
     <div class="pill hidden" id="pondPill"></div>
     <div class="spacer"></div>
     <button class="btn ghost" id="btnDebug" title="调试：门票免费、鱼塘全开（快捷键 D）">∞ 调试：关</button>
-    <button class="btn ghost" id="btnKeepBest">每种只留最大的</button>
     <button class="btn ghost" id="btnSellCommon">卖掉普通鱼</button>
     <button class="btn ghost" id="btnDex">📖 图鉴</button>
     <button class="btn" id="btnGo">🎣 去捞鱼</button>
@@ -1248,18 +1244,9 @@ function updateUI() {
     const commons = S.tank.filter(t => SP[t.sp].rarity === 0);
     $('btnSellCommon').classList.toggle('hidden', !inTank);
     $('btnSellCommon').disabled = !commons.length;
-    const narrow = W < 640;
-    const cv = commons.reduce((v, t) => v + fishValue(t), 0);
-    $('btnSellCommon').textContent = narrow
-        ? (commons.length ? `卖普通 ${commons.length}条¥${cv}` : '卖普通')
-        : (commons.length ? `卖掉普通鱼 ×${commons.length}（¥${cv}）` : '卖掉普通鱼');
-    const extras = bestExtras();
-    $('btnKeepBest').classList.toggle('hidden', !inTank);
-    $('btnKeepBest').disabled = !extras.length;
-    const ev = extras.reduce((v, t) => v + fishValue(t), 0);
-    $('btnKeepBest').textContent = narrow
-        ? (extras.length ? `只留最大 卖${extras.length}条¥${ev}` : '只留最大')
-        : (extras.length ? `每种只留最大的（卖 ${extras.length} 条 ¥${ev}）` : '每种只留最大的');
+    $('btnSellCommon').textContent = commons.length
+        ? `卖掉普通鱼 ×${commons.length}（¥${commons.reduce((v, t) => v + fishValue(t), 0)}）`
+        : '卖掉普通鱼';
     $('pondPill').classList.toggle('hidden', inTank);
     if (!inTank && pond) $('pondPill').textContent = PONDS[pond.idx].name + (pond.free ? ' · 破网票' : '');
     let hint = '';
@@ -1418,22 +1405,6 @@ $('btnSellCommon').onclick = () => {
     audio();
     const uids = S.tank.filter(t => SP[t.sp].rarity === 0).map(t => t.uid);
     if (uids.length) { const v = sellFish(uids); toast(`卖掉 ${uids.length} 条普通鱼 +¥${v}`); }
-};
-// 每种鱼只留体型最大（=这一种里最值钱）的一条，其余都算要卖的
-function bestExtras() {
-    const best = {};
-    for (const t of S.tank) if (!best[t.sp] || t.size > best[t.sp].size) best[t.sp] = t;
-    return S.tank.filter(t => best[t.sp] !== t);
-}
-$('btnKeepBest').onclick = () => {
-    audio();
-    const extras = bestExtras();
-    if (!extras.length) return;
-    const total = extras.reduce((v, t) => v + fishValue(t), 0);
-    const rare = extras.filter(t => SP[t.sp].rarity > 0).length;
-    if (!confirm(`每种鱼只留体型最大的一条，卖掉其余 ${extras.length} 条${rare ? `（含 ${rare} 条稀有/传说）` : ''}，共 ¥${total}？`)) return;
-    sellFish(extras.map(t => t.uid));
-    toast(`卖掉 ${extras.length} 条 +¥${total}，每种留下最大的一条`);
 };
 $('modalBg').addEventListener('pointerdown', e => { if (e.target === $('modalBg') && mode === 'tank') closeModal(); });
 
