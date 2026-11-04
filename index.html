@@ -209,9 +209,9 @@ const SPECIES = [
 ];
 const SP = Object.fromEntries(SPECIES.map(s => [s.id, s]));
 const PONDS = [
-    { name: '清水小溪', ticket: 30,  net: 100, top: '#3a9cb5', bot: '#145570', desc: '新手鱼塘，鱼不太怕人' },
-    { name: '荷花池',   ticket: 150, net: 130, top: '#24735f', bot: '#0c3a35', desc: '锦鲤出没，荷叶底下藏着鱼' },
-    { name: '月光池',   ticket: 600, net: 170, top: '#2b2b72', bot: '#0a0a28', desc: '夜里才开的池子，鱼会发光' },
+    { name: '清水小溪', ticket: 80,   net: 100, top: '#3a9cb5', bot: '#145570', desc: '新手鱼塘，鱼不太怕人' },
+    { name: '荷花池',   ticket: 250,  net: 130, top: '#24735f', bot: '#0c3a35', desc: '锦鲤出没，荷叶底下藏着鱼' },
+    { name: '月光池',   ticket: 1200, net: 170, top: '#2b2b72', bot: '#0a0a28', desc: '夜里才开的池子，鱼会发光' },
 ];
 const UNLOCK_NEED = 3;   // 上一个鱼塘集齐几种解锁下一个
 const NET_R = 58;
@@ -222,7 +222,7 @@ const NET_R = 58;
 const SAVE_KEY = 'fishScoop_v1';
 function load() { try { return JSON.parse(localStorage.getItem(SAVE_KEY)); } catch (e) { return null; } }
 function save() { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); }
-let S = load() || { money: 60, tank: [], dex: {}, uid: 1, seen: false };
+let S = load() || { money: 100, tank: [], dex: {}, uid: 1, seen: false };
 
 const fishValue = f => Math.max(1, Math.round(SP[f.sp].value * f.size));
 const dexCountPond = i => SPECIES.filter(s => s.pond === i && S.dex[s.id]).length;
@@ -637,6 +637,15 @@ function startPond(idx, free) {
     } else {
         for (let i = 0; i < 26; i++) deco.push({ x: rand(0, W), y: Math.random() < 0.5 ? rand(H * 0.85, H) : rand(0, H * 0.12), r: rand(6, 16), c: Math.floor(rand(0, 3)) });
     }
+    // 一张票三张网（破网票只有一张小网）；每张网的收获先放进 bag，三张用完一起结算
+    const nets = free ? 1 : NETS_PER_TICKET;
+    pond = { idx, fish, deco, free, nets, netsLeft: nets, bag: [], log: [] };
+    net = newNet();
+    updateUI();
+}
+const NETS_PER_TICKET = 3;
+function newNet() {
+    const free = pond.free, idx = pond.idx;
     const cracks = [];
     for (let i = 0; i < 7; i++) {
         const a0 = rand(0, TAU), pts = [];
@@ -644,15 +653,33 @@ function startPond(idx, free) {
         for (let k = 0; k < 4; k++) { pts.push([Math.cos(a) * r, Math.sin(a) * r]); r -= rand(8, 16); a += rand(-0.35, 0.35); }
         cracks.push({ pts, at: rand(0.15, 0.6) });
     }
-    pond = { idx, fish, deco, free };
-    net = {
+    const n = {
         x: pointer.inside ? pointer.x : W / 2, y: pointer.inside ? pointer.y : H / 2,
         r: free ? NET_R * 0.82 : NET_R, max: free ? 70 : PONDS[idx].net, dur: free ? 70 : PONDS[idx].net,
         drain: 6, phase: 'aim', inWater: false, alarm: 0, speed: 0, t: 0,
         liveN: 0, liveW: 0, caught: [], cracks, done: false, ha: handleAngle(),
     };
-    if (pointer.inside) { const tp = netTargetFromPointer(); net.x = tp.x; net.y = tp.y; }
-    updateUI();
+    if (pointer.inside) {
+        const g = handleLen(n.r);
+        n.x = pointer.x - Math.cos(n.ha) * g; n.y = pointer.y - Math.sin(n.ha) * g;
+    }
+    return n;
+}
+// 一张网收完：记下这一网的结果；还有网就换新网，没网了就结算
+function finishNet() {
+    const torn = net.phase === 'tear';
+    const caught = torn ? [] : net.caught.map(c => c.a);
+    const value = caught.reduce((v, a) => v + Math.max(1, Math.round(a.S.value * a.size)), 0);
+    pond.log.push({ torn, n: caught.length, value, why: net.tearWhy });
+    pond.bag.push(...caught);
+    const i = pond.log.length;
+    if (pond.netsLeft > 0) {
+        toast(torn ? `第 ${i} 网：纸破了，这一网的鱼跑了` : caught.length ? `第 ${i} 网：捞到 ${caught.length} 条 ¥${value}` : `第 ${i} 网：空网`, 1600);
+        net = newNet();
+        updateUI();
+    } else {
+        showResult(pond.bag, pond.log);
+    }
 }
 
 // 贵鱼要游到网的内圈才算稳，在边上提网会溜
@@ -683,6 +710,7 @@ const rareWary = a => net.alarm * a.S.shy > 0.15 || net.speed > 1.5;
 function dipNet() {
     net.phase = 'dip';
     net.inWater = true;
+    pond.netsLeft--;
     net.ha = handleAngle();
     const tp = netTargetFromPointer();
     net.x = tp.x; net.y = tp.y;
@@ -788,7 +816,7 @@ function updateNet(dt, f) {
     }
     if (!net.done && ((net.phase === 'lift' && net.t > 1.4) || (net.phase === 'tear' && net.t > 1.3))) {
         net.done = true;
-        showResult(net.phase === 'lift' ? net.caught.map(c => c.a) : [], net.phase === 'tear');
+        finishNet();
     }
 }
 
@@ -1257,10 +1285,10 @@ function updateUI() {
         ? `卖掉普通鱼 ×${commons.length}（¥${commons.reduce((v, t) => v + fishValue(t), 0)}）`
         : '卖掉普通鱼';
     $('pondPill').classList.toggle('hidden', inTank);
-    if (!inTank && pond) $('pondPill').textContent = PONDS[pond.idx].name + (pond.free ? ' · 破网票' : '');
+    if (!inTank && pond) $('pondPill').textContent = PONDS[pond.idx].name + (pond.free ? ' · 破网票' : '') + ' · 网 ' + '●'.repeat(pond.netsLeft) + '○'.repeat(pond.nets - pond.netsLeft);
     let hint = '';
     if (inTank) hint = tankFish.length ? '点鱼可以卖掉 · 点水面或按住拖动会吓到它们' : '';
-    else if (net && net.phase === 'aim') hint = '按住放网 · 松手提网 · 只有一次机会';
+    else if (net && net.phase === 'aim') hint = `按住放网 · 松手提网 · 还剩 ${pond.netsLeft} 张网`;
     else if (net && net.phase === 'dip') hint = '别乱动，等鱼游上来 · 纸越泡越软，超重就会破';
     $('hint').textContent = hint;
 }
@@ -1284,7 +1312,7 @@ function showPondSelect() {
         const free = !DEBUG && i === 0 && freeTicketOK();
         let btn;
         if (!un) btn = `<div class="meta">🔒 集齐「${PONDS[i - 1].name}」${UNLOCK_NEED} 种鱼解锁</div>`;
-        else if (free) btn = `<button class="btn" data-pond="0" data-free="1">免费破网票</button><div class="meta">没钱了？送你一张：网小、纸薄</div>`;
+        else if (free) btn = `<button class="btn" data-pond="0" data-free="1">免费破网票</button><div class="meta">没钱了？送你一张：只有一张小网、纸薄</div>`;
         else if (DEBUG) btn = `<button class="btn" data-pond="${i}">免费进入（调试）</button>`;
         else btn = `<button class="btn" data-pond="${i}" ${S.money < p.ticket ? 'disabled' : ''}>门票 ¥${p.ticket}</button>`;
         return `<div class="card ${un ? '' : 'locked'}">
@@ -1294,7 +1322,7 @@ function showPondSelect() {
             ${btn}
         </div>`;
     }).join('');
-    openModal(`<button class="mx" id="mClose" aria-label="关闭">✕</button><h2>选一个鱼塘</h2><div class="sub">一张票只能下一网。网上的鱼越多越重，纸撑不住就全跑了。</div>
+    openModal(`<button class="mx" id="mClose" aria-label="关闭">✕</button><h2>选一个鱼塘</h2><div class="sub">一张票三张网，每张网只能下一次。网上的鱼越多越重，纸撑不住这一网就全跑了。</div>
         <div class="cards">${cards}</div>`);
     $('mClose').onclick = closeModal;
     $('modal').querySelectorAll('[data-pond]').forEach(b => b.onclick = () => {
@@ -1305,7 +1333,7 @@ function showPondSelect() {
     });
 }
 
-function showResult(caught, torn) {
+function showResult(caught, log) {
     const unlockedBefore = unlockedCount();
     const rows = [];
     let total = 0;
@@ -1321,10 +1349,13 @@ function showResult(caught, torn) {
     save();
     rows.sort((x, y) => y.a.S.rarity - x.a.S.rarity || fishValue(y.t) - fishValue(x.t));
     let title, sub;
-    if (torn) { title = '纸破了！'; sub = `${net && net.tearWhy ? net.tearWhy + '。' : ''}鱼全跑了，下次早点提网。`; }
-    else if (!caught.length) { title = '空网…'; sub = '鱼都溜了。下网会惊到鱼，等它们游回来再提。'; }
+    const allTorn = log.length && log.every(l => l.torn);
+    if (!caught.length) { title = allTorn ? '网全破了！' : '空手而归…'; sub = allTorn ? '贪心了…下次早点提网。' : '鱼都溜了。下网会惊到鱼，等它们游回来再提。'; }
     else { title = `捞到 ${caught.length} 条！`; sub = `总价值 ¥${total}`; }
+    // 每一网的明细
+    const netLines = log.map((l, i) => `<div>第 ${i + 1} 网：${l.torn ? `<span style="color:#ff8a7a">纸破了</span>${l.why ? `（${l.why}）` : ''}` : l.n ? `${l.n} 条 · ¥${l.value}` : '空网'}</div>`).join('');
     openModal(`<h2>${title}</h2><div class="sub">${sub}</div>
+        <div class="sub" style="margin-top:-8px;line-height:1.8">${netLines}</div>
         <div class="catch-list" id="catchList"></div>
         <div class="actions"><button class="btn" id="mBack">回鱼缸</button></div>`);
     const list = $('catchList');
@@ -1547,7 +1578,7 @@ enterTank();
 if (!S.seen) {
     openModal(`<h2>🎣 捞金鱼</h2>
         <div class="sub" style="line-height:1.9;font-size:15px;opacity:.9">
-        · 买一张门票，进鱼塘<b>只能下一网</b><br>
+        · 买一张门票有<b>三张纸网</b>，每张只能下一次<br>
         · <b>按住</b>把纸网放进水里，<b>松手</b>提起来<br>
         · 网一动鱼就跑，<b>静下来</b>它们才会游到网上<br>
         · 贵鱼要游到<b>网中间</b>才捞得稳，在网边上提网会溜（白色描边 = 稳了）<br>
