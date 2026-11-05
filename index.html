@@ -1498,6 +1498,14 @@ function toggleDebug() {
 }
 $('btnDebug').onclick = toggleDebug;
 addEventListener('keydown', e => { if (e.code === 'KeyD' && !e.repeat) toggleDebug(); });
+// 手机没有键盘：2 秒内连点左上角金钱 5 下，开关调试
+let moneyTaps = [];
+$('moneyPill').addEventListener('pointerdown', () => {
+    const now = performance.now();
+    moneyTaps = moneyTaps.filter(t => now - t < 2000);
+    moneyTaps.push(now);
+    if (moneyTaps.length >= 5) { moneyTaps = []; toggleDebug(); }
+});
 // 手机自动全屏：安卓 / iPad 第一次碰屏幕就进全屏；iPhone Safari 不支持网页全屏，提示添加到主屏幕
 const isTouch = matchMedia('(pointer: coarse)').matches;
 const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
