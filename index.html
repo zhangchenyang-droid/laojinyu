@@ -224,8 +224,8 @@ const SPECIES = [
     { id: 'yinghua',   pond: 1, name: '樱花锦', rarity: 2, c1: '#ffd6e4', c2: '#ff6f9f', pat: 'koi', glow: '#ff9ec4', len: 42, weight: 22, value: 420, shy: 2.9, spawn: 1.5 },
     { id: 'yingguang', pond: 2, name: '萤光',   rarity: 0, c1: '#b6ff7a', c2: '#eaffc8', pat: 'plain', glow: '#9dff5a', soft: true, len: 28, weight: 12, value: 95, shy: 1.2, spawn: 45 },
     { id: 'liuli',     pond: 2, name: '琉璃',   rarity: 0, c1: '#6fa8ff', c2: '#e0ecff', pat: 'stripe',   len: 34, weight: 16, value: 130,  shy: 1.2, spawn: 35 },
-    { id: 'xingban',   pond: 2, name: '夜蝶',   rarity: 1, c1: '#2a1d5c', c2: '#b9a4ff', c3: '#7fe3ff', pat: 'plain', tail: 'butterfly', rays: 3, rayA: 0.14, eye: '#e8e8ff', len: 38, weight: 21, value: 320, shy: 2.0, spawn: 8 },
-    { id: 'yueguang',  pond: 2, name: '月光',   rarity: 2, c1: '#e8f0ff', c2: '#ffffff', c3: '#a6d0ff', pat: 'glow', tail: 'butterfly', tailA: 0.95, rays: 5, rayA: 0.45, ray: '#9db4ea', glow: '#cfe0ff', len: 46, weight: 24, value: 1500, shy: 3.0, spawn: 1.5 },
+    { id: 'xingban',   pond: 2, name: '星斑',   rarity: 1, c1: '#2a2f6a', c2: '#ffffff', pat: 'stars', eye: '#e8e8ff', len: 38, weight: 21, value: 320, shy: 2.0, spawn: 8 },
+    { id: 'yueguang',  pond: 2, name: '月光',   rarity: 2, c1: '#e8f0ff', c2: '#ffffff', pat: 'glow', glow: '#cfe0ff', len: 46, weight: 24, value: 1500, shy: 3.0, spawn: 1.5 },
 ];
 const SP = Object.fromEntries(SPECIES.map(s => [s.id, s]));
 const PONDS = [
@@ -403,68 +403,20 @@ function bodyPath(c, L, Wd) {
     c.bezierCurveTo(-L * 0.1, Wd * 0.62, L * 0.42, Wd * 0.62, L * 0.5, 0);
     c.closePath();
 }
-// 蝶尾：俯视时尾巴像两片蝴蝶翅膀向两侧摊开，半透明渐变 + 鳍条
-function drawButterflyTail(c, sp, L, Wd, swing, silhouette) {
-    L *= 0.82; Wd *= 0.85;
-    const flap = swing * 0.6;
-    const wing = (side) => {
-        const s = side, f = 1 + s * flap;
-        c.beginPath();
-        c.moveTo(L * 0.04, 0);
-        c.bezierCurveTo(-L * 0.05, s * Wd * 0.9 * f, -L * 0.42, s * Wd * 1.35 * f, -L * 0.6, s * Wd * 0.95 * f);
-        c.quadraticCurveTo(-L * 0.5, s * Wd * 0.5, -L * 0.62, s * Wd * 0.18);
-        c.quadraticCurveTo(-L * 0.4, s * Wd * 0.04, -L * 0.3, 0);
-        c.closePath();
-    };
-    if (silhouette) {
-        c.fillStyle = silhouette;
-        wing(-1); c.fill(); wing(1); c.fill();
-        return;
-    }
-    const g = c.createLinearGradient(0, 0, -L * 0.62, 0);
-    g.addColorStop(0, sp.c1);
-    g.addColorStop(0.45, sp.c2);
-    g.addColorStop(1, sp.c3);
-    for (const s of [-1, 1]) {
-        c.save();
-        wing(s);
-        c.globalAlpha = sp.tailA ?? 0.78;
-        c.fillStyle = g;
-        c.fill();
-        c.clip();
-        // 鳍条
-        c.globalAlpha = sp.rayA ?? 0.35;
-        c.strokeStyle = sp.ray || '#fff';
-        c.lineWidth = Math.max(0.6, L * 0.012);
-        const n = sp.rays || 5;
-        for (let i = 0; i < n; i++) {
-            const t = (i + 0.5) / n;
-            c.beginPath();
-            c.moveTo(0, 0);
-            c.quadraticCurveTo(-L * 0.25, s * Wd * (0.2 + t * 0.9), -L * 0.62, s * Wd * (0.15 + t * 1.0));
-            c.stroke();
-        }
-        c.restore();
-    }
-}
 function drawFishShape(c, sp, L, swing, seed, silhouette) {
     const Wd = L * 0.5;
     // 尾巴
     c.save();
     c.translate(-L * 0.36, 0);
     c.rotate(swing);
-    if (sp.tail === 'butterfly') {
-        drawButterflyTail(c, sp, L, Wd, swing, silhouette);
-    } else {
-        c.beginPath();
-        c.moveTo(0, 0);
-        c.lineTo(-L * 0.42, -Wd * 0.6);
-        c.quadraticCurveTo(-L * 0.3, 0, -L * 0.42, Wd * 0.6);
-        c.closePath();
-        c.fillStyle = silhouette ? silhouette : (sp.pat === 'tail' ? sp.c2 : sp.c1);
-        c.globalAlpha = silhouette ? 1 : 0.92;
-        c.fill();
-    }
+    c.beginPath();
+    c.moveTo(0, 0);
+    c.lineTo(-L * 0.42, -Wd * 0.6);
+    c.quadraticCurveTo(-L * 0.3, 0, -L * 0.42, Wd * 0.6);
+    c.closePath();
+    c.fillStyle = silhouette ? silhouette : (sp.pat === 'tail' ? sp.c2 : sp.c1);
+    c.globalAlpha = silhouette ? 1 : 0.92;
+    c.fill();
     c.restore();
     // 身体
     bodyPath(c, L, Wd);
@@ -491,6 +443,12 @@ function drawFishShape(c, sp, L, swing, seed, silhouette) {
         }
     } else if (sp.pat === 'stripe') {
         for (let i = 0; i < 3; i++) c.fillRect((-0.18 + i * 0.17) * L, -Wd, L * 0.05, Wd * 2);
+    } else if (sp.pat === 'stars') {
+        for (let i = 0; i < 8; i++) {
+            c.beginPath();
+            c.arc((hash(seed + i) - 0.5) * L * 0.7, (hash(seed + i + 9) - 0.5) * Wd * 0.8, L * 0.025 + hash(seed + i + 4) * L * 0.02, 0, TAU);
+            c.fill();
+        }
     }
     // 脊背高光
     c.globalAlpha = 0.28;
