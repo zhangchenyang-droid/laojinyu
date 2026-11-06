@@ -122,6 +122,22 @@
     .pop .m { font-size: 13px; opacity: .75; margin: 4px 0 10px; }
     .pop .row { display: flex; gap: 8px; }
     .pop .btn { padding: 7px 12px; font-size: 13px; }
+    .pop.below { transform: translate(-50%, 18px); }
+    .pop .n { padding-right: 26px; }
+    .pop .pclose {
+        position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; padding: 0; border: none; border-radius: 50%;
+        background: none; color: rgba(255, 255, 255, .6); font-size: 16px; line-height: 26px; cursor: pointer; font-family: inherit;
+    }
+    .pop .pclose:active { background: rgba(255, 255, 255, .12); }
+    .pop .sci { font-size: 12px; font-weight: 600; opacity: .6; }
+    .pop input {
+        flex: 1; min-width: 0; width: 110px; padding: 7px 10px; font-size: 14px; font-family: inherit; color: #fff;
+        background: rgba(255, 255, 255, .1); border: 1px solid rgba(255, 255, 255, .3); border-radius: 10px; outline: none;
+    }
+    .pop input:focus { border-color: #6fb886; }
+    /* 起名 / 确定 用偏暗的绿色，和黄色的「卖出」区分开 */
+    .pop .btn.name { background: linear-gradient(#5aa874, #3f8a5a); color: #fff; box-shadow: 0 3px 0 #2a5e3d; }
+    .pop .btn.name:active { box-shadow: 0 1px 0 #2a5e3d; }
 
     .toast {
         position: fixed; top: 70px; left: 50%; transform: translateX(-50%); z-index: 30;
@@ -444,7 +460,9 @@ function drawFishShape(c, sp, L, swing, seed, silhouette) {
     } else if (sp.pat === 'stripe') {
         for (let i = 0; i < 3; i++) c.fillRect((-0.18 + i * 0.17) * L, -Wd, L * 0.05, Wd * 2);
     } else if (sp.pat === 'stars') {
-        for (let i = 0; i < 8; i++) {
+        // 最多三个点
+        const n = hash(seed + 33) < 0.5 ? 2 : 3;
+        for (let i = 0; i < n; i++) {
             c.beginPath();
             c.arc((hash(seed + i) - 0.5) * L * 0.7, (hash(seed + i + 9) - 0.5) * Wd * 0.8, L * 0.025 + hash(seed + i + 4) * L * 0.02, 0, TAU);
             c.fill();
@@ -1129,16 +1147,11 @@ function enterTank() {
     });
     updateUI();
 }
-// 鱼缸里有若干个缓慢游走的"兴趣点"，每个鱼群跟一个；兴趣点相遇时鱼群合并，分开时又散开
-function tankGroupCount(n) { return clamp(Math.round(n / 6) + 1, 2, 6); }
-// 按 1, 1/2, 1/3… 的比例分配，形成大中小不同的鱼群；约 8% 是不跟群的独行侠（-1）
-function tankGroupOf(a, K) {
-    if (hash(a.uid * 3.1) < 0.08) return -1;
-    let total = 0;
-    for (let k = 0; k < K; k++) total += 1 / (k + 1);
-    let r = hash(a.uid * 7.3 + 1) * total;
-    for (let k = 0; k < K; k++) { if ((r -= 1 / (k + 1)) <= 0) return k; }
-    return K - 1;
+// 鱼缸里普通鱼按品种成群，每个品种跟一个缓慢游走的"兴趣点"；稀有/传说鱼单独游
+function tankGroups() {
+    const ids = [];
+    for (const a of tankFish) if (a.S.rarity === 0 && !ids.includes(a.sp)) ids.push(a.sp);
+    return ids;
 }
 function tankAttractor(i, R) {
     // 大群游得慢、范围大，小群游得快
@@ -1150,9 +1163,8 @@ function tankAttractor(i, R) {
 }
 function updateTankFish(dt, f) {
     const R = tankRect(), margin = 80;
-    const K = tankGroupCount(tankFish.length);
-    const att = [];
-    for (let i = 0; i < K; i++) att.push(tankAttractor(i, R));
+    const groups = tankGroups();
+    const att = groups.map((_, i) => tankAttractor(i, R));
     for (const a of tankFish) {
         let sx = 0, sy = 0, avx = 0, avy = 0, px = 0, py = 0, n = 0;
         for (const b of tankFish) {
@@ -1160,8 +1172,9 @@ function updateTankFish(dt, f) {
             const dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy;
             if (d2 > 8100) continue;
             const d = Math.sqrt(d2) || 0.01;
-            n++; avx += b.vx; avy += b.vy; px += b.x; py += b.y;
-            const ps = 44 * a.size * a.pers.space;
+            // 只跟同品种对齐/聚拢，避让对所有鱼生效
+            if (b.sp === a.sp) { n++; avx += b.vx; avy += b.vy; px += b.x; py += b.y; }
+            const ps = 60 * a.size * a.pers.space;
             if (d < ps) { sx += dx / d * (ps - d) / ps; sy += dy / d * (ps - d) / ps; }
         }
         let fx = sx * 0.05 * a.pers.sep, fy = sy * 0.05 * a.pers.sep;
@@ -1169,11 +1182,11 @@ function updateTankFish(dt, f) {
             fx += (avx / n - a.vx) * 0.03 * a.pers.ali; fy += (avy / n - a.vy) * 0.03 * a.pers.ali;
             fx += (px / n - a.x) * 0.0003 * a.pers.coh; fy += (py / n - a.y) * 0.0003 * a.pers.coh;
         }
-        // 跟随自己鱼群的兴趣点（独行侠不跟）
-        const gi = tankGroupOf(a, K);
+        // 跟随自己品种的兴趣点（稀有/传说不跟）
+        const gi = groups.indexOf(a.sp);
         if (gi >= 0) {
             const g = att[gi], gx = g.x - a.x, gy = g.y - a.y, gd = Math.hypot(gx, gy) || 1;
-            const pull = Math.min(1, gd / 150) * 0.018;
+            const pull = Math.min(1, gd / 200) * 0.016;
             fx += gx / gd * pull; fy += gy / gd * pull;
         }
         // 漫游
@@ -1206,45 +1219,23 @@ function updateTankFish(dt, f) {
         }
     }
 }
-// 集齐鱼塘后鱼缸里的装饰：小溪 → 彩色鹅卵石+小水车；荷花池 → 荷叶荷花（浮在鱼上面）；月光池 → 月亮倒影+星点
+// 集齐鱼塘后鱼缸里的装饰，收拢在角落：左下 彩色鹅卵石；右上 荷叶荷花（浮在鱼上面）
 function drawTankDecorUnder(R) {
     const done = S.pondDone || {};
     if (done[0]) {
-        const cx = R.x + R.w * 0.13, cy = R.y + R.h * 0.84;
+        const cx = R.x + R.w * 0.1, cy = R.y + R.h * 0.86;
         const cols = ['#f2a65a', '#e86f6f', '#f5d76e', '#8fd3a5', '#9ab8f0', '#d9a3f0'];
         for (let i = 0; i < 11; i++) {
             const a = i / 11 * TAU;
             ctx.fillStyle = cols[i % cols.length];
             ctx.beginPath(); ctx.ellipse(cx + Math.cos(a) * 34, cy + Math.sin(a) * 22, 9, 6, a, 0, TAU); ctx.fill();
         }
-        // 小水车：俯视看是一个转动的轮子
-        const wx = R.x + R.w * 0.86, wy = R.y + R.h * 0.16;
-        ctx.save(); ctx.translate(wx, wy); ctx.rotate(T * 0.8);
-        ctx.strokeStyle = '#8a5a34'; ctx.lineWidth = 4;
-        ctx.beginPath(); ctx.arc(0, 0, 22, 0, TAU); ctx.stroke();
-        for (let i = 0; i < 8; i++) { const a = i / 8 * TAU; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * 26, Math.sin(a) * 26); ctx.stroke(); }
-        ctx.fillStyle = '#6a4224'; ctx.beginPath(); ctx.arc(0, 0, 5, 0, TAU); ctx.fill();
-        ctx.restore();
-    }
-    if (done[2]) {
-        const mx = R.x + R.w * 0.72, my = R.y + R.h * 0.3, mr = Math.min(R.w, R.h) * 0.09;
-        const mg = ctx.createRadialGradient(mx, my, 0, mx, my, mr * 2.4);
-        mg.addColorStop(0, 'rgba(255,255,230,0.45)'); mg.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = mg; ctx.fillRect(mx - mr * 2.4, my - mr * 2.4, mr * 4.8, mr * 4.8);
-        ctx.fillStyle = 'rgba(255,255,235,0.6)';
-        ctx.beginPath(); ctx.ellipse(mx + Math.sin(T * 1.3) * 2, my, mr, mr * (0.95 + Math.sin(T * 1.7) * 0.03), 0, 0, TAU); ctx.fill();
-        for (let i = 0; i < 26; i++) {
-            ctx.globalAlpha = 0.35 + 0.5 * (0.5 + 0.5 * Math.sin(T * 2 + i * 1.7));
-            ctx.fillStyle = '#fff';
-            ctx.fillRect(R.x + hash(i + 300) * R.w, R.y + hash(i + 400) * R.h, 1.6, 1.6);
-        }
-        ctx.globalAlpha = 1;
     }
 }
 function drawTankDecorOver(R) {
     if (!(S.pondDone || {})[1]) return;
-    drawLilyPad({ x: R.x + R.w * 0.2, y: R.y + R.h * 0.22, r: 38, rot: 0.6, flower: true });
-    drawLilyPad({ x: R.x + R.w * 0.8, y: R.y + R.h * 0.78, r: 30, rot: 2.4, flower: true });
+    drawLilyPad({ x: R.x + R.w * 0.9, y: R.y + R.h * 0.14, r: 38, rot: 0.6, flower: true });
+    drawLilyPad({ x: R.x + R.w * 0.81, y: R.y + R.h * 0.08, r: 26, rot: 2.4, flower: false });
 }
 function drawTank() {
     const bg = ctx.createLinearGradient(0, 0, 0, H);
@@ -1262,18 +1253,20 @@ function drawTank() {
     ctx.save();
     roundRect(R.x, R.y, R.w, R.h, 20); ctx.clip();
     const wg = ctx.createLinearGradient(0, R.y, 0, R.y + R.h);
-    wg.addColorStop(0, '#5cc4d6'); wg.addColorStop(1, '#2a8aa6');
+    wg.addColorStop(0, '#48a8bc'); wg.addColorStop(1, '#1f7290');
     ctx.fillStyle = wg; ctx.fillRect(R.x, R.y, R.w, R.h);
-    for (let i = 0; i < 40; i++) {
-        ctx.fillStyle = ['rgba(240,230,200,0.5)', 'rgba(200,190,170,0.5)', 'rgba(160,150,140,0.5)'][i % 3];
-        ctx.beginPath(); ctx.ellipse(R.x + hash(i) * R.w, R.y + hash(i + 50) * R.h, 6 + hash(i + 9) * 10, 4 + hash(i + 3) * 6, hash(i) * 3, 0, TAU); ctx.fill();
+    // 缸底沙带：小石子只沿底边铺一条，颜色贴近水色
+    for (let i = 0; i < 16; i++) {
+        ctx.fillStyle = ['rgba(235,245,240,0.22)', 'rgba(20,70,90,0.16)'][i % 2];
+        ctx.beginPath(); ctx.ellipse(R.x + hash(i) * R.w, R.y + R.h * (0.9 + hash(i + 50) * 0.09), 5 + hash(i + 9) * 7, 3 + hash(i + 3) * 4, hash(i) * 3, 0, TAU); ctx.fill();
     }
-    // 水草（俯视：一丛丛摆动的叶片）
-    for (let i = 0; i < 5; i++) {
-        const px = R.x + (0.1 + 0.2 * i) * R.w, py = R.y + (i % 2 ? 0.82 : 0.18) * R.h;
+    // 水草（俯视：一丛丛摆动的叶片），只在右下和左侧靠边
+    const weeds = [[0.93, 0.8], [0.84, 0.9], [0.05, 0.5]];
+    for (let i = 0; i < weeds.length; i++) {
+        const px = R.x + weeds[i][0] * R.w, py = R.y + weeds[i][1] * R.h;
         for (let k = 0; k < 6; k++) {
             const a = k / 6 * TAU + Math.sin(T * 0.9 + i + k) * 0.15;
-            ctx.strokeStyle = k % 2 ? 'rgba(70,160,90,0.8)' : 'rgba(100,190,110,0.8)';
+            ctx.strokeStyle = k % 2 ? 'rgba(45,125,85,0.65)' : 'rgba(75,155,100,0.65)';
             ctx.lineWidth = 5; ctx.lineCap = 'round';
             ctx.beginPath(); ctx.moveTo(px, py);
             ctx.quadraticCurveTo(px + Math.cos(a + 0.4) * 22, py + Math.sin(a + 0.4) * 22, px + Math.cos(a) * 38, py + Math.sin(a) * 38);
@@ -1290,8 +1283,17 @@ function drawTank() {
     }
     ctx.globalCompositeOperation = 'source-over';
     drawTankDecorUnder(R);
+    // 内壁阴影：四周靠缸壁的水更深，中间显得通透
+    const ew = Math.min(R.w, R.h) * 0.12;
+    for (const [x0, y0, x1, y1, rx, ry, rw, rh] of [
+        [R.x, 0, R.x + ew, 0, R.x, R.y, ew, R.h], [R.x + R.w, 0, R.x + R.w - ew, 0, R.x + R.w - ew, R.y, ew, R.h],
+        [0, R.y, 0, R.y + ew, R.x, R.y, R.w, ew], [0, R.y + R.h, 0, R.y + R.h - ew, R.x, R.y + R.h - ew, R.w, ew]]) {
+        const eg = ctx.createLinearGradient(x0, y0, x1, y1);
+        eg.addColorStop(0, 'rgba(4,28,44,0.32)'); eg.addColorStop(1, 'rgba(4,28,44,0)');
+        ctx.fillStyle = eg; ctx.fillRect(rx, ry, rw, rh);
+    }
     for (const a of tankFish) drawFishShadow(a, fishLen(a) * 1.2);
-    for (const a of tankFish) drawFishGlow(a, fishLen(a) * 1.2);
+    for (const a of tankFish) if (a.S.rarity === 2) drawFishGlow(a, fishLen(a) * 1.2);
     for (const a of tankFish) drawFish(a, fishLen(a) * 1.2, a === selected);
     drawTankDecorOver(R);
     drawRipples();
@@ -1299,6 +1301,9 @@ function drawTank() {
     ctx.fillStyle = 'rgba(255,255,255,0.05)';
     ctx.beginPath(); ctx.moveTo(R.x, R.y); ctx.lineTo(R.x + R.w * 0.3, R.y); ctx.lineTo(R.x + R.w * 0.1, R.y + R.h); ctx.lineTo(R.x, R.y + R.h); ctx.fill();
     ctx.restore();
+    // 玻璃内沿一圈细高光
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 1.5;
+    roundRect(R.x + 1, R.y + 1, R.w - 2, R.h - 2, 19); ctx.stroke();
     if (!tankFish.length) {
         ctx.fillStyle = 'rgba(255,255,255,0.75)';
         ctx.font = '600 18px -apple-system, "PingFang SC", sans-serif';
@@ -1414,6 +1419,8 @@ function showResult(caught, log) {
         const d = S.dex[a.sp] || (S.dex[a.sp] = { count: 0, best: 0 });
         d.count++; d.best = Math.max(d.best, a.size);
         const t = { uid: S.uid++, sp: a.sp, size: +a.size.toFixed(2) };
+        const ser = (S.series || {})[a.sp];
+        if (ser) t.name = ser.base + (ser.next++) + '号';
         S.tank.push(t);
         total += fishValue(t);
         rows.push({ a, t, isNew });
@@ -1458,7 +1465,7 @@ function showResult(caught, log) {
 }
 
 // ---------- 图鉴点亮 / 集齐庆祝 ----------
-const POND_DECOR = ['鱼缸角落多了一圈彩色鹅卵石和小水车', '鱼缸里漂来两片开着荷花的荷叶', '鱼缸水面映出一轮月亮和星星'];
+const POND_DECOR = ['鱼缸角落多了一圈彩色鹅卵石', '鱼缸里漂来两片开着荷花的荷叶', ''];
 const MASTER_BONUS = 3000;
 function collectUnlockEvents(newSpecies) {
     const ev = [];
@@ -1584,7 +1591,7 @@ function playUnlockQueue(events, done) {
         const p = PONDS[e.i];
         openModal(`<div class="mtop"><button class="btn" id="mOk">领取</button></div>
             <div class="celebrate on" id="cel"><div class="badge-big">🏅</div><h2>${p.name} 图鉴集齐！</h2>
-            <div class="reward-list">💰 奖金 ¥${p.ticket}<br>🪴 ${POND_DECOR[e.i]}</div></div>`);
+            <div class="reward-list">💰 奖金 ¥${p.ticket}${POND_DECOR[e.i] ? '<br>🪴 ' + POND_DECOR[e.i] : ''}</div></div>`);
         sfx.fanfare(); cssBurst($('cel'), 36);
         $('mOk').onclick = () => { S.pondDone = S.pondDone || {}; S.pondDone[e.i] = true; S.money += p.ticket; save(); next(true); };
     } else if (e.type === 'master') {
@@ -1638,19 +1645,62 @@ function showDex() {
     if (fresh.length) { S.dexSeen = S.dexSeen || {}; for (const id of fresh) S.dexSeen[id] = true; save(); }
 }
 
-function showPop(a) {
+// 鱼缸里的鱼可以起名（只在鱼缸里显示）。某个品种第一次起名时，这个名字成为该品种的系列名：
+// 同种其他没名字的鱼按捞到顺序叫「小黄2号、小黄3号…」，以后再捞到的同种鱼接着往下编号；单条改名不影响别的鱼
+const escHtml = str => str.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+function nameFish(t, name) {
+    name = name.trim().slice(0, 8);
+    if (!name) { delete t.name; save(); return 0; }
+    t.name = name;
+    S.series = S.series || {};
+    let n = 0;
+    if (!S.series[t.sp]) {
+        const ser = S.series[t.sp] = { base: name, next: 2 };
+        for (const o of S.tank) {
+            if (o === t || o.sp !== t.sp || o.name) continue;
+            o.name = ser.base + (ser.next++) + '号';
+            n++;
+        }
+    }
+    save();
+    return n;
+}
+function showPop(a, renaming) {
     selected = a;
     const t = S.tank.find(x => x.uid === a.uid);
     const el = $('fishPop');
-    el.innerHTML = `<div class="n" style="color:${RARITY[a.S.rarity].color}">${a.S.name} <span style="font-size:12px;opacity:.7">${RARITY[a.S.rarity].name}</span></div>
-        <div class="m">体型 ${t.size.toFixed(2)}x · 售价 ¥${fishValue(t)}</div>
-        <div class="row"><button class="btn" id="pSell">卖出</button><button class="btn ghost" id="pKeep">留着</button></div>`;
-    el.style.left = clamp(a.x, 100, W - 100) + 'px';
-    el.style.top = Math.max(120, a.y - 20) + 'px';
+    const title = t.name ? `${escHtml(t.name)} <span class="sci">（${a.S.name}）</span>` : a.S.name;
+    el.innerHTML = `<button class="pclose" id="pClose">✕</button><div class="n" style="color:${RARITY[a.S.rarity].color}">${title} <span style="font-size:12px;opacity:.7">${RARITY[a.S.rarity].name}</span></div>
+        <div class="m">体型 ${t.size.toFixed(2)}x · 售价 ¥${fishValue(t)}</div>` + (renaming
+        ? `<div class="row"><input id="pName" maxlength="8" placeholder="给它起个名字" value="${escHtml(t.name || '')}"><button class="btn name" id="pOk">确定</button></div>`
+        : `<div class="row"><button class="btn" id="pSell">卖出</button><button class="btn name" id="pName">起名</button></div>`);
+    el.style.left = clamp(a.x, 120, W - 120) + 'px';
     el.classList.remove('hidden');
+    // 鱼在缸顶附近时，上面放不下就弹在鱼下方，别盖住顶栏
+    const below = a.y - 20 - el.offsetHeight - 18 < TOP;
+    el.classList.toggle('below', below);
+    el.style.top = (below ? a.y + 20 : a.y - 20) + 'px';
+    $('pClose').onclick = () => { sfx.click(); hidePop(); };
+    if (renaming) {
+        const inp = $('pName');
+        inp.focus(); inp.select();
+        const ok = () => {
+            sfx.click();
+            const n = nameFish(t, inp.value);
+            if (n) toast(`同种的另外 ${n} 条叫 ${t.name}2号～${t.name}${n + 1}号`);
+            showPop(a);
+        };
+        $('pOk').onclick = ok;
+        inp.addEventListener('keydown', e => {
+            e.stopPropagation();
+            if (e.key === 'Enter') ok();
+            if (e.key === 'Escape') { sfx.click(); showPop(a); }
+        });
+        return;
+    }
     el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';
     $('pSell').onclick = () => sellFish([a.uid]);
-    $('pKeep').onclick = () => { sfx.click(); hidePop(); };
+    $('pName').onclick = () => { sfx.click(); showPop(a, true); };
 }
 
 $('btnGo').onclick = () => { audio(); showPondSelect(); };
@@ -1722,7 +1772,7 @@ function toggleDebug() {
     if ($('modalBg').classList.contains('show') && mode === 'tank') showPondSelect();
 }
 $('btnDebug').onclick = toggleDebug;
-addEventListener('keydown', e => { if (e.code === 'KeyD' && !e.repeat) toggleDebug(); });
+addEventListener('keydown', e => { if (e.target.tagName === 'INPUT') return; if (e.code === 'KeyD' && !e.repeat) toggleDebug(); });
 // 手机没有键盘：2 秒内连点左上角金钱 5 下，开关调试
 let moneyTaps = [];
 $('moneyPill').addEventListener('pointerdown', () => {
