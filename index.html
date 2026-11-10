@@ -46,6 +46,7 @@
     }
     .btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #b8700a; }
     .btn.ghost { background: rgba(255, 255, 255, .12); color: #fff; box-shadow: none; border: 1px solid rgba(255, 255, 255, .25); }
+    .btn.feeding { background: linear-gradient(#5aa874, #3f8a5a); border-color: transparent; box-shadow: 0 3px 0 #2a5e3d; }
     .btn.red { background: linear-gradient(#ff8a7a, #e0503c); color: #fff; box-shadow: 0 3px 0 #9a2a1c; }
     .btn:disabled { opacity: .4; cursor: not-allowed; }
     .hidden { display: none !important; }
@@ -210,6 +211,7 @@
     <div class="pill hidden" id="pondPill"></div>
     <div class="spacer"></div>
     <button class="btn ghost" id="btnDebug" title="调试：门票免费、鱼塘全开（快捷键 D）">∞ 调试：关</button>
+    <button class="btn ghost" id="btnFeed">🍤 投喂</button>
     <button class="btn ghost" id="btnSellCommon">卖掉普通鱼</button>
     <button class="btn ghost" id="btnDex">📖 图鉴</button>
     <button class="btn" id="btnGo">🎣 去捞鱼</button>
@@ -672,6 +674,7 @@ const pointer = { x: -999, y: -999, inside: false };
 
 function startPond(idx, free) {
     mode = 'pond';
+    feedMode = false; food.length = 0;
     closeModal();
     hidePop();
     const list = SPECIES.filter(s => s.pond === idx);
@@ -1182,7 +1185,83 @@ function tankAttractor(i, R) {
         y: R.y + R.h * (0.5 + 0.32 * Math.sin(t * 0.9 + i * 1.7 + i * i * 0.5)),
     };
 }
+// ============================================================
+// 投喂（纯观赏：不花钱，不影响体型/售价）
+// ============================================================
+let feedMode = false;
+const food = [];
+const feedDrag = { on: false, x: 0, y: 0, acc: 0 };
+const FOOD_COLS = ['#c98a44', '#a9682e', '#e0a85a'];
+function dropFood(x, y, n) {
+    const R = tankRect();
+    for (let i = 0; i < n && food.length < 80; i++) {
+        const a = rand(0, TAU), d = rand(0, 22);
+        food.push({ x: clamp(x + Math.cos(a) * d, R.x + 8, R.x + R.w - 8), y: clamp(y + Math.sin(a) * d, R.y + 8, R.y + R.h - 8),
+            vx: Math.cos(a) * rand(0.1, 0.4), vy: Math.sin(a) * rand(0.1, 0.4), t: 0, r: rand(2.6, 3.8), c: FOOD_COLS[i % 3],
+            float: FOOD_FLOAT * rand(0.7, 1.3), ph: rand(0, TAU) });
+    }
+    ripple(x, y, 26, 0.35);
+    bubbles(3, 1100, 1800, 0.12, 0.035);
+}
+let lastEatSnd = 0;
+function eatFood(p) {
+    const i = food.indexOf(p);
+    if (i < 0) return;
+    food.splice(i, 1);
+    ripple(p.x, p.y, 14, 0.3);
+    const now = performance.now();
+    if (now - lastEatSnd > 70) { lastEatSnd = now; bubble(rand(500, 800), 0.05, 0, 0.05); }
+}
+// 饲料一生：水面漂浮 → 慢慢下沉 → 躺在缸底，最后淡掉。鱼哪个阶段都能吃
+const FOOD_FLOAT = 1.4, FOOD_SINK = 4, FOOD_LIFE = 20;
+// 0=水面 1=缸底，下沉段先快后慢
+function foodDepth(p) {
+    const k = clamp((p.t - p.float) / FOOD_SINK, 0, 1);
+    return 1 - (1 - k) * (1 - k);
+}
+function updateFood(dt, f) {
+    for (let i = food.length - 1; i >= 0; i--) {
+        const p = food[i];
+        p.t += dt;
+        const d = foodDepth(p);
+        // 下沉时左右轻轻晃，沉到底就不动了
+        const sway = d > 0 && d < 1 ? Math.sin(p.t * 2.2 + p.ph) * 0.12 * (1 - d) : 0;
+        p.x += (p.vx + sway) * f; p.y += p.vy * f;
+        p.vx *= Math.pow(d > 0 ? 0.9 : 0.97, f); p.vy *= Math.pow(d > 0 ? 0.9 : 0.97, f);
+        if (p.t > FOOD_LIFE) food.splice(i, 1);
+    }
+}
+function drawFood() {
+    for (const p of food) {
+        const d = foodDepth(p), floating = p.t < p.float;
+        ctx.globalAlpha = clamp((FOOD_LIFE - p.t) / 2, 0, 1);
+        // 水面上漂着轻轻起伏；越往下越小
+        const bob = floating ? 1 + Math.sin(p.t * 5 + p.ph) * 0.06 : 1;
+        const r = p.r * (1 - 0.3 * d) * bob;
+        // 影子：在水面时离得远、很淡，沉到底时贴住饲料
+        const so = 1 + (1 - d) * 7;
+        ctx.fillStyle = `rgba(0,20,30,${0.1 + 0.2 * d})`;
+        ctx.beginPath(); ctx.arc(p.x + so * 0.7, p.y + so, r * (1 + (1 - d) * 0.3), 0, TAU); ctx.fill();
+        // 漂浮时周围一圈水面张力的小亮环
+        if (floating) {
+            ctx.strokeStyle = `rgba(255,255,255,${0.3 * (1 - p.t / p.float)})`;
+            ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.arc(p.x, p.y, r * (1.8 + Math.sin(p.t * 3 + p.ph) * 0.2), 0, TAU); ctx.stroke();
+        }
+        ctx.fillStyle = p.c;
+        ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, TAU); ctx.fill();
+        // 隔着越深的水颜色越蓝越暗
+        if (d > 0) {
+            ctx.fillStyle = `rgba(28,100,128,${0.55 * d})`;
+            ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, TAU); ctx.fill();
+        }
+        ctx.fillStyle = `rgba(255,240,210,${0.65 * (1 - d)})`;
+        ctx.beginPath(); ctx.arc(p.x - r * 0.3, p.y - r * 0.3, r * 0.35, 0, TAU); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+}
 function updateTankFish(dt, f) {
+    updateFood(dt, f);
     const R = tankRect(), margin = 80;
     const groups = tankGroups();
     const att = groups.map((_, i) => tankAttractor(i, R));
@@ -1203,8 +1282,19 @@ function updateTankFish(dt, f) {
             fx += (avx / n - a.vx) * 0.03 * a.pers.ali; fy += (avy / n - a.vy) * 0.03 * a.pers.ali;
             fx += (px / n - a.x) * 0.0003 * a.pers.coh; fy += (py / n - a.y) * 0.0003 * a.pers.coh;
         }
+        // 有饲料就去抢最近的一粒（所有鱼一样快），抢食时不跟鱼群
+        // 刚吃完一粒要缓一下；饲料落水后 1 秒鱼才发现，留出漂浮→下沉的过程给人看
+        a.full = Math.max(0, (a.full || 0) - dt);
+        let tgt = null, td = 220;
+        if (!a.full) for (const p of food) { if (p.t < 1) continue; const d = Math.hypot(p.x - a.x, p.y - a.y); if (d < td) { td = d; tgt = p; } }
+        if (tgt) {
+            const gx = tgt.x - a.x, gy = tgt.y - a.y, gd = td || 1;
+            fx += gx / gd * 0.1; fy += gy / gd * 0.1;
+            const L = fishLen(a) * 1.2;
+            if (Math.hypot(a.x + Math.cos(a.ang) * L * 0.4 - tgt.x, a.y + Math.sin(a.ang) * L * 0.4 - tgt.y) < L * 0.3 + 4) { eatFood(tgt); a.full = 1; }
+        }
         // 跟随自己品种的兴趣点（稀有/传说不跟）
-        const gi = groups.indexOf(a.sp);
+        const gi = tgt ? -1 : groups.indexOf(a.sp);
         if (gi >= 0) {
             const g = att[gi], gx = g.x - a.x, gy = g.y - a.y, gd = Math.hypot(gx, gy) || 1;
             const pull = Math.min(1, gd / 200) * 0.016;
@@ -1224,7 +1314,7 @@ function updateTankFish(dt, f) {
         const damp = Math.pow(hold ? 0.85 : 0.99, f);
         a.vx *= damp; a.vy *= damp;
         a.flee = a.flee * Math.pow(0.2, dt);
-        const ms = 0.9 * a.pers.spd * (1 + a.flee * 4);
+        const ms = 0.9 * a.pers.spd * (1 + a.flee * 4) * (tgt ? 1.3 : 1);
         let v = Math.hypot(a.vx, a.vy);
         if (v > ms) { const k = Math.max(ms / v, Math.pow(0.9, f)); a.vx *= k; a.vy *= k; }
         // 保持最低游速，鱼不会停在原地发呆
@@ -1313,6 +1403,7 @@ function drawTank() {
         eg.addColorStop(0, 'rgba(4,28,44,0.32)'); eg.addColorStop(1, 'rgba(4,28,44,0)');
         ctx.fillStyle = eg; ctx.fillRect(rx, ry, rw, rh);
     }
+    drawFood();
     for (const a of tankFish) drawFishShadow(a, fishLen(a) * 1.2);
     for (const a of tankFish) if (a.S.rarity === 2) drawFishGlow(a, fishLen(a) * 1.2);
     for (const a of tankFish) drawFish(a, fishLen(a) * 1.2, a === selected);
@@ -1376,8 +1467,11 @@ function updateUI() {
     $('btnDebug').classList.toggle('hidden', !inTank || localStorage.getItem('fishScoop_debug') === null);
     $('btnDebug').textContent = DEBUG ? '∞ 调试：开' : '∞ 调试：关';
     $('btnDebug').style.color = DEBUG ? '#ffd970' : '';
-    const commons = S.tank.filter(t => SP[t.sp].rarity === 0);
+    const commons = S.tank.filter(bulkSellable);
     $('btnSellCommon').classList.toggle('hidden', !inTank);
+    $('btnFeed').classList.toggle('hidden', !inTank || !S.tank.length);
+    $('btnFeed').classList.toggle('feeding', feedMode);
+    $('btnFeed').textContent = feedMode ? '🍤 投喂中' : '🍤 投喂';
     $('btnSellCommon').disabled = !commons.length;
     $('btnSellCommon').textContent = commons.length
         ? `卖掉普通鱼 ×${commons.length}（¥${commons.reduce((v, t) => v + fishValue(t), 0)}）`
@@ -1385,7 +1479,7 @@ function updateUI() {
     $('pondPill').classList.toggle('hidden', inTank);
     if (!inTank && pond) $('pondPill').textContent = PONDS[pond.idx].name + (pond.free ? ' · 破网票' : '') + ' · ' + '❤️'.repeat(pond.netsLeft) + '🤍'.repeat(pond.nets - pond.netsLeft);
     let hint = '';
-    if (inTank) hint = tankFish.length ? '点鱼可以卖掉 · 点水面或按住拖动会吓到它们' : '';
+    if (inTank) hint = !tankFish.length ? '' : feedMode ? '点水面撒饲料 · 按住拖动一路撒 · 再点「投喂中」结束' : '点鱼可以卖掉 · 点水面或按住拖动会吓到它们';
     else if (net && net.phase === 'aim') hint = `按住放网 · 松手提网 · 还剩 ${pond.netsLeft} 张网`;
     else if (net && net.phase === 'dip') hint = '别乱动，等鱼游上来 · 纸越泡越软，超重就会破';
     $('hint').textContent = hint;
@@ -1686,6 +1780,12 @@ function nameFish(t, name) {
     save();
     return n;
 }
+// 「卖掉普通鱼」跳过起过名的鱼；系列自动编号的（小黄2号、小黄3号…）照样可以卖
+function isAutoName(t) {
+    const ser = (S.series || {})[t.sp];
+    return !!ser && t.name.startsWith(ser.base) && /^\d+号$/.test(t.name.slice(ser.base.length));
+}
+const bulkSellable = t => SP[t.sp].rarity === 0 && (!t.name || isAutoName(t));
 function showPop(a, renaming) {
     selected = a;
     const t = S.tank.find(x => x.uid === a.uid);
@@ -1709,6 +1809,7 @@ function showPop(a, renaming) {
             sfx.click();
             const n = nameFish(t, inp.value);
             if (n) toast(`同种的另外 ${n} 条叫 ${t.name}2号～${t.name}${n + 1}号`);
+            updateUI();
             showPop(a);
         };
         $('pOk').onclick = ok;
@@ -1726,10 +1827,14 @@ function showPop(a, renaming) {
 
 $('btnGo').onclick = () => { audio(); showPondSelect(); };
 $('btnDex').onclick = () => { audio(); showDex(); };
+$('btnFeed').onclick = () => { audio(); sfx.click(); feedMode = !feedMode; hidePop(); updateUI(); };
 $('btnSellCommon').onclick = () => {
     audio();
-    const uids = S.tank.filter(t => SP[t.sp].rarity === 0).map(t => t.uid);
-    if (uids.length) { const v = sellFish(uids); toast(`卖掉 ${uids.length} 条普通鱼 +¥${v}`); }
+    const uids = S.tank.filter(bulkSellable).map(t => t.uid);
+    if (!uids.length) return;
+    const v = sellFish(uids);
+    const kept = S.tank.filter(t => SP[t.sp].rarity === 0).length;
+    toast(`卖掉 ${uids.length} 条普通鱼 +¥${v}` + (kept ? `，起过名的 ${kept} 条留着` : ''));
 };
 $('modalBg').addEventListener('pointerdown', e => { if (e.target === $('modalBg') && mode === 'tank') closeModal(); });
 
@@ -1751,6 +1856,12 @@ function scareTank(x, y, radius, power, dirX = 0, dirY = 0) {
 }
 cvs.addEventListener('pointermove', e => {
     pointer.x = e.clientX; pointer.y = e.clientY; pointer.inside = true;
+    if (feedDrag.on && mode === 'tank') {
+        feedDrag.acc += Math.hypot(e.clientX - feedDrag.x, e.clientY - feedDrag.y);
+        feedDrag.x = e.clientX; feedDrag.y = e.clientY;
+        if (feedDrag.acc > 34 && inTankWater(e.clientX, e.clientY)) { feedDrag.acc = 0; dropFood(e.clientX, e.clientY, 2); }
+        return;
+    }
     if (!stir.on || mode !== 'tank') return;
     const dx = e.clientX - stir.x, dy = e.clientY - stir.y, d = Math.hypot(dx, dy);
     if (d < 1) return;
@@ -1769,6 +1880,13 @@ cvs.addEventListener('pointerdown', e => {
     pointer.x = e.clientX; pointer.y = e.clientY; pointer.inside = true;
     cvs.setPointerCapture(e.pointerId);
     if (mode === 'pond' && net && net.phase === 'aim') { dipNet(); return; }
+    if (mode === 'tank' && feedMode) {
+        if (inTankWater(e.clientX, e.clientY)) {
+            dropFood(e.clientX, e.clientY, 6);
+            Object.assign(feedDrag, { on: true, x: e.clientX, y: e.clientY, acc: 0 });
+        }
+        return;
+    }
     if (mode === 'tank') {
         let best = null, bd = 1e9;
         for (const a of tankFish) {
@@ -1818,7 +1936,7 @@ if (isIOS && isTouch && !isStandalone && !canFullscreen && !localStorage.getItem
     $('a2hs').classList.remove('hidden');
     $('a2hsX').onclick = () => { $('a2hs').classList.add('hidden'); localStorage.setItem('fishScoop_a2hs', '1'); };
 }
-function onUp() { stir.on = false; if (mode === 'pond' && net && net.phase === 'dip') liftNet(); }
+function onUp() { stir.on = false; feedDrag.on = false; if (mode === 'pond' && net && net.phase === 'dip') liftNet(); }
 cvs.addEventListener('pointerup', onUp);
 cvs.addEventListener('pointercancel', onUp);
 
