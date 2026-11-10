@@ -36,6 +36,7 @@
     .money { color: #ffd970; transition: transform .15s; }
     .money.bump { transform: scale(1.18); }
     .spacer { flex: 1; }
+    .hsw { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0.01; cursor: pointer; }
     .btn {
         background: linear-gradient(#ffcf5a, #f0a020); color: #4a2a00;
         border: none; border-radius: 999px; padding: 10px 18px;
@@ -384,6 +385,25 @@ function tone(f1, f2, dur, vol, type = 'sine', delay = 0) {
     g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
     o.connect(g).connect(AC.destination); o.start(t0); o.stop(t0 + dur + 0.02);
 }
+// 手机震动：游戏内（下网、提网、捞到、破网、点鱼）很轻；按钮重一点（20ms）。
+// 安卓用 navigator.vibrate，哪里都能震；iPhone 网页只有「手指真点到系统开关」才有触感，
+// 所以 iPhone 只在按钮上有：每个按钮里垫一个透明的系统开关（游戏内是按住拖动，iPhone 震不了）
+const haptic = (() => { let last = 0; return (ms = 8, taps = 1) => {
+    const now = performance.now(); if (now - last < 45 || !navigator.vibrate) return; last = now;
+    navigator.vibrate(taps > 1 ? Array.from({ length: taps * 2 - 1 }, (_, k) => k % 2 ? 40 : ms) : ms);
+}; })();
+const IOS_TAP = !navigator.vibrate;
+document.addEventListener('pointerdown', e => { if (!IOS_TAP && e.target.closest && e.target.closest('button, .btn')) haptic(20); }, true);
+let _hswT = 0;
+function tapHaptics() {
+    if (!IOS_TAP) return;
+    document.querySelectorAll('button, .btn').forEach(el => {
+        if (el.querySelector(':scope > .hsw')) return;
+        if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
+        const i = document.createElement('input'); i.type = 'checkbox'; i.setAttribute('switch', ''); i.className = 'hsw'; i.tabIndex = -1; i.ariaHidden = 'true'; el.appendChild(i);
+    });
+}
+if (IOS_TAP) addEventListener('DOMContentLoaded', () => { tapHaptics(); new MutationObserver(() => { clearTimeout(_hswT); _hswT = setTimeout(tapHaptics, 30); }).observe(document.body, { childList: true, subtree: true }); });
 const sfx = {
     // 网下水：网轻轻没入水里（缓起、偏闷的推水声）+ 低沉的咕噜气泡，不要拍水面那种脆响
     splash() {
@@ -767,7 +787,7 @@ function dipNet() {
     ripple(net.x, net.y, net.r * 2.4, 0.7);
     ripple(net.x, net.y, net.r * 1.5, 0.5);
     spawnDrops(net.x, net.y, 22, net.r);
-    sfx.splash();
+    sfx.splash(); haptic(8);
     updateUI();
 }
 function liftNet() {
@@ -793,6 +813,7 @@ function liftNet() {
     sfx.lift();
     if (inNet.length >= 3) { hitstop = 0.09; shake = 6; }
     if (inNet.some(a => a.S.rarity === 2)) { sfx.fanfare(); shake = 9; }
+    haptic(inNet.some(a => a.S.rarity === 2) ? 12 : inNet.length >= 3 ? 10 : inNet.length ? 8 : 5, inNet.some(a => a.S.rarity === 2) ? 3 : inNet.length >= 3 ? 2 : 1);
     updateUI();
 }
 function tearNet(inNet) {
@@ -800,7 +821,7 @@ function tearNet(inNet) {
     net.inWater = false;
     net.t = 0;
     net.tearAng = rand(0, TAU);
-    sfx.tear();
+    sfx.tear(); haptic(15, 2);
     shake = 16;
     for (const a of inNet) {
         const ang = rand(0, TAU), sp = rand(5, 9);
@@ -1325,7 +1346,7 @@ function sellFish(uids) {
     if (selected && uids.includes(selected.uid)) selected = null;
     S.money += total;
     save();
-    sfx.coin(); setTimeout(() => sfx.coin(), 120);
+    sfx.coin(); haptic(8); setTimeout(() => sfx.coin(), 120);
     setTimeout(bumpMoney, 450);
     hidePop();
     updateUI();
@@ -1452,7 +1473,7 @@ function showResult(caught, log) {
         row.appendChild(v);
         list.appendChild(row);
     });
-    if (rows.some(r => r.isNew)) setTimeout(() => sfx.fanfare(), 250);
+    if (rows.some(r => r.isNew)) setTimeout(() => { sfx.fanfare(); haptic(10, 2); }, 250);
     $('mBack').onclick = () => {
         sfx.click();
         enterTank();
@@ -1754,11 +1775,11 @@ cvs.addEventListener('pointerdown', e => {
             const d = Math.hypot(a.x - e.clientX, a.y - e.clientY);
             if (d < fishLen(a) * 0.9 && d < bd) { bd = d; best = a; }
         }
-        if (best) { sfx.pick(); showPop(best); return; }
+        if (best) { sfx.pick(); haptic(5); showPop(best); return; }
         hidePop();
         if (inTankWater(e.clientX, e.clientY)) {
             ripple(e.clientX, e.clientY, 70, 0.6);
-            sfx.plop();
+            sfx.plop(); haptic(4);
             scareTank(e.clientX, e.clientY, 160, 4);
             Object.assign(stir, { on: true, x: e.clientX, y: e.clientY, acc: 0, sound: 0 });
         }
